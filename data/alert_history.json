@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ALT-393BF2CF",
+    "machineId": "MCH-TEST-001",
+    "machineName": "FactoryGuard Test Machine",
+    "severity": "Critical",
+    "description": "Trained ML model predicted failure (84.0% probability). Inspect this machine.",
+    "timestamp": "2026-10-18T07:14:31.493944+00:00",
+    "status": "Open",
+    "source": "trained-ml",
+    "failureProbability": 0.84,
+    "readings": {
+      "air_temperature": 303.15,
+      "process_temperature": 313.15,
+      "rotational_speed": 1200.0,
+      "torque": 65.0,
+      "tool_wear": 250.0
+    }
+  },
+  {
+    "id": "ALT-2236EBC3",
+    "machineId": "MCH-TEST-001",
+    "machineName": "FactoryGuard Test Machine",
+    "severity": "Critical",
+    "description": "Trained ML model predicted failure (84.0% probability). Inspect this machine.",
+    "timestamp": "2026-10-18T07:17:21.501743+00:00",
+    "status": "Acknowledged",
+    "source": "trained-ml",
+    "failureProbability": 0.84,
+    "readings": {
+      "air_temperature": 303.15,
+      "process_temperature": 313.15,
+      "rotational_speed": 1200.0,
+      "torque": 65.0,
+      "tool_wear": 250.0
+    }
+  }
+]

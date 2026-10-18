@@ -1,5 +1,5 @@
 import type { Health } from './machines';
-export interface MachineAlert {id:string; machineId:string; severity:Health; description:string; timestamp:string; status:'Open'|'Acknowledged'|'Resolved'}
+export interface MachineAlert {id:string; machineId:string; severity:Health; description:string; timestamp:string; status:'Open'|'Acknowledged'|'Resolved'; source?:'demo'|'trained-ml'; machineName?:string; failureProbability?:number}
 export const mockAlerts: MachineAlert[] = [
 {id:'ALT-1042',machineId:'MCH-003',severity:'Critical',description:'Spindle temperature deviation',timestamp:'2026-10-12T08:42:00Z',status:'Open'},
 {id:'ALT-1041',machineId:'MCH-002',severity:'Warning',description:'Torque variation detected',timestamp:'2026-10-12T08:36:00Z',status:'Open'},

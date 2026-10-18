@@ -1,5 +1,5 @@
 import { mockMachines } from '@/data/machines';
-import { mockAlerts } from '@/data/alerts';
+import { mockAlerts, type MachineAlert } from '@/data/alerts';
 import { mockAnalysis } from '@/data/analysis';
 import { mockSensorHistory, type Period } from '@/data/sensors';
 
@@ -11,6 +11,8 @@ export const apiConfig = {
     machine: (id: string) => `/api/machines/${encodeURIComponent(id)}`,
     technician: '/api/technician/chat',
     analysis: '/analyze',
+    machineFailure: '/predict-machine-failure',
+    alerts: '/api/alerts',
   },
 };
 
@@ -31,6 +33,26 @@ export const api = {
 
   listAlerts: () => mockAlerts,
 
+  async fetchBackendAlerts(): Promise<MachineAlert[]> {
+    const response = await fetch(`${apiConfig.baseUrl}${apiConfig.endpoints.alerts}`);
+    if (!response.ok) throw new Error(`Fetching alerts failed: HTTP ${response.status}`);
+    const data = await response.json();
+    return data.map((a: MachineAlert) => ({ ...a, source: 'trained-ml' as const }));
+  },
+
+  async updateBackendAlert(id: string, status: MachineAlert['status']): Promise<MachineAlert> {
+    const response = await fetch(
+      `${apiConfig.baseUrl}${apiConfig.endpoints.alerts}/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      }
+    );
+    if (!response.ok) throw new Error(`Updating alert failed: HTTP ${response.status}`);
+    return { ...await response.json(), source: 'trained-ml' };
+  },
+
   getHistory: (id: string, period: Period) =>
     mockSensorHistory(getMachine(id), period),
 
@@ -41,7 +63,7 @@ export const api = {
     if (apiConfig.mode === 'backend') {
       try {
         const response = await fetch(
-          `${apiConfig.baseUrl}${apiConfig.endpoints.analysis}`,
+          `${apiConfig.baseUrl}${apiConfig.endpoints.machineFailure}`,
           {
             method: 'POST',
             headers: {
@@ -49,11 +71,12 @@ export const api = {
             },
             body: JSON.stringify({
               machine_id: machine.id,
-              name: machine.name,
-              temperature: machine.temperature,
-              rpm: machine.rpm,
+              machine_name: machine.name,
+              air_temperature: Number((machine.temperature + 273.15).toFixed(2)),
+              process_temperature: Number((machine.temperature + 283.15).toFixed(2)),
+              rotational_speed: machine.rpm,
               torque: machine.torque,
-              wear: machine.wear,
+              tool_wear: machine.wear,
             }),
           }
         );
@@ -66,18 +89,17 @@ export const api = {
 
         const backendData = await response.json();
 
-        const severity =
-          backendData.status === 'Critical'
-            ? 'Critical'
-            : backendData.status === 'Warning'
-              ? 'Warning'
-              : 'Healthy';
+        const isFailure = backendData.prediction === 1;
 
         return {
           ...baseDemo,
-          severity,
-          recommendation:
-            backendData.message || baseDemo.recommendation,
+          severity: isFailure ? 'Critical' : 'Healthy',
+          prediction: backendData.prediction,
+          failureProbability: Number(backendData.failure_probability),
+          predictionSource: 'trained-ml',
+          recommendation: isFailure
+            ? `The ML model predicted a machine failure. Inspect the machine. Failure probability: ${(Number(backendData.failure_probability) * 100).toFixed(1)}%.`
+            : `The ML model did not predict a failure for these readings. Continue monitoring. Failure probability: ${(Number(backendData.failure_probability) * 100).toFixed(1)}%.`,
         };
       } catch (err) {
         console.error(

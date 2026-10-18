@@ -5,3 +5,9 @@ __pycache__/
 .env
 node_modules/
 dist/
+# Local Python environment
+.venv313/
+
+# ML model cache and generated data
+__pycache__/
+*.py[cod]

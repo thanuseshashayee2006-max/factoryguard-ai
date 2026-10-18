@@ -57,3 +57,6 @@ factoryguard_backup/
 **/.venv/
 venv/
 **/venv/
+
+# Local Python environment
+.venv313/

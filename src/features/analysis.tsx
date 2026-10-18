@@ -25,6 +25,9 @@ import {
 
 type AnalysisResult = ReturnType<typeof mockAnalysis> & {
   recommendation?: string;
+  prediction?: number;
+  failureProbability?: number;
+  predictionSource?: string;
 };
 
 export function AnalysisPage({ machineId }: { machineId: string }) {
@@ -47,9 +50,13 @@ export function AnalysisPage({ machineId }: { machineId: string }) {
       const result = (await api.analyze(machineId)) as AnalysisResult;
       setAnalysis(result);
 
-      if (result.recommendation) {
+      if (result.recommendation?.includes('ML model')) {
         setNotice(
-          'Backend rule-based analysis received. Confidence, causes, and history may still contain demo data.'
+          'Trained ML model prediction received. Machine readings are simulated; other diagnostics may still contain demo data.'
+        );
+      } else if (result.recommendation) {
+        setNotice(
+          'Backend recommendation received. Other diagnostics may still contain demo data.'
         );
       } else {
         setNotice(
@@ -67,6 +74,7 @@ export function AnalysisPage({ machineId }: { machineId: string }) {
     }
   }
 
+  const isMLResult = Boolean(analysis.recommendation?.includes('ML model'));
   const isBackendResult = Boolean(analysis.recommendation);
 
   return (
@@ -99,14 +107,18 @@ export function AnalysisPage({ machineId }: { machineId: string }) {
         <ScanLine size={18} />
         <div>
           <strong>
-            {isBackendResult
-              ? 'BACKEND RULE-BASED ANALYSIS'
-              : 'DEMO DATA'}
+            {isMLResult
+              ? 'TRAINED ML MODEL ANALYSIS'
+              : isBackendResult
+                ? 'BACKEND ANALYSIS'
+                : 'DEMO DATA'}
           </strong>
           <p>
-            {isBackendResult
-              ? 'The backend evaluated the machine using preliminary temperature and wear thresholds. Other diagnostics may still be sample data.'
-              : 'Sample diagnostics are shown until a backend analysis response is received. No trained predictive model is connected.'}
+            {isMLResult
+              ? 'The trained ML model returned a prediction for simulated machine readings. Other diagnostics may still contain demo data.'
+              : isBackendResult
+                ? 'A backend recommendation was received. Other diagnostics may still contain demo data.'
+                : 'Sample diagnostics are shown until a backend analysis response is received.'}
           </p>
         </div>
       </div>
@@ -192,14 +204,20 @@ export function AnalysisPage({ machineId }: { machineId: string }) {
 
             <div className="confidence">
               <span>
-                Sample confidence <DemoBadge />
+                {isMLResult ? 'ML failure probability' : 'Sample confidence'}
+                {!isMLResult && <> <DemoBadge /></>}
               </span>
-              <strong>{analysis.confidence}%</strong>
+              <strong>
+                {isMLResult && typeof analysis.failureProbability === 'number'
+                  ? `${(analysis.failureProbability * 100).toFixed(1)}%`
+                  : `${analysis.confidence}%`}
+              </strong>
             </div>
 
             <p className="muted-small">
-              This confidence value is preconfigured demo data, not a
-              model-generated score.
+              {isMLResult
+                ? 'Probability returned by the trained model for these simulated readings; it is not a guarantee of failure.'
+                : 'This confidence value is preconfigured demo data, not a model-generated score.'}
             </p>
           </div>
         </section>
