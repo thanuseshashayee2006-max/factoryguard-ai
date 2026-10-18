@@ -1,69 +1,84 @@
+
 import os
 import logging
 import joblib
 import httpx
+
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Literal
+
 from backend.alert_store import list_alerts, record_prediction, update_alert
 from dotenv import load_dotenv
 
-# Load environment variables (.env file)
+# Load environment variables
 load_dotenv()
 
-# Configure logging (hides sensitive internal errors from client responses)
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("FactoryGuardBackend")
 
 app = FastAPI(title="FactoryGuard AI")
 
-# Allow CORS requests from frontend (Streamlit / Web)
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-
-allow_origins=[
-    "http://localhost:8081",
-    "http://127.0.0.1:8081",
-    "http://localhost:8501",
-    "http://127.0.0.1:8501",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "http://localhost:8083",
-    "http://127.0.0.1:8083",
-    "http://localhost:8084",
-    "http://127.0.0.1:8084",
-    "http://localhost:8085",
-    "http://127.0.0.1:8085",
-],
-
+    allow_origins=[
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:8083",
+        "http://127.0.0.1:8083",
+        "http://localhost:8084",
+        "http://127.0.0.1:8084",
+        "http://localhost:8085",
+        "http://127.0.0.1:8085",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["*"],
 )
 
-# Configuration & Variables
+# Configuration
 AMD_API_KEY = os.getenv("AMD_API_KEY")
-LLM_API_ENDPOINT = os.getenv("LLM_API_ENDPOINT", "http://localhost:8000/v1")
-MODEL_PATH = os.getenv("MODEL_PATH", "models/sensor_anomaly_model.pkl")
+LLM_API_ENDPOINT = os.getenv(
+    "LLM_API_ENDPOINT", "http://localhost:8000/v1"
+)
+MODEL_PATH = os.getenv(
+    "MODEL_PATH", "models/sensor_anomaly_model.pkl"
+)
 
-# Safe ML Model Loading
+# Load the existing five-feature ML pipeline
 ml_model = None
+
 try:
     if os.path.exists(MODEL_PATH):
         ml_model = joblib.load(MODEL_PATH)
-        logger.info(f"ML Model loaded successfully from {MODEL_PATH}")
+        logger.info("ML model loaded successfully from %s", MODEL_PATH)
     else:
-        logger.warning(f"Model file not found at {MODEL_PATH}. Running in fallback mode.")
-except Exception as e:
-    logger.error(f"Failed to load ML Model: {str(e)}")
+        logger.warning(
+            "Model file not found at %s. Running in fallback mode.",
+            MODEL_PATH,
+        )
+except Exception:
+    logger.exception("Failed to load ML model")
 
 
-# Schemas
+# Request schemas
 class SensorDataRequest(BaseModel):
-    temperature: float = Field(..., description="Sensor temperature input")
-    vibration: float = Field(..., description="Sensor vibration input")
-    pressure: float = Field(..., description="Sensor pressure input")
+    temperature: float = Field(
+        ..., description="Sensor temperature input"
+    )
+    vibration: float = Field(
+        ..., description="Sensor vibration input"
+    )
+    pressure: float = Field(
+        ..., description="Sensor pressure input"
+    )
 
 
 class FullWorkflowRequest(BaseModel):
@@ -72,7 +87,44 @@ class FullWorkflowRequest(BaseModel):
     sensor_data: SensorDataRequest
 
 
-# Endpoints
+class AnalyzeRequest(BaseModel):
+    machine_id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    temperature: float
+    rpm: float
+    torque: float
+    wear: float
+
+
+class MachineFailureRequest(BaseModel):
+    machine_id: str = Field(
+        default="UNKNOWN", description="Machine identifier"
+    )
+    machine_name: str = Field(
+        default="Unknown machine", description="Machine name"
+    )
+    air_temperature: float = Field(
+        ..., description="Air temperature in Kelvin"
+    )
+    process_temperature: float = Field(
+        ..., description="Process temperature in Kelvin"
+    )
+    rotational_speed: float = Field(
+        ..., description="Rotational speed in rpm"
+    )
+    torque: float = Field(
+        ..., description="Torque in Nm"
+    )
+    tool_wear: float = Field(
+        ..., description="Tool wear in minutes"
+    )
+
+
+class AlertStatusRequest(BaseModel):
+    status: Literal["Open", "Acknowledged", "Resolved"]
+
+
+# Basic endpoints
 @app.get("/")
 def home():
     return {"message": "FactoryGuard AI backend is running!"}
@@ -87,43 +139,35 @@ def health():
     }
 
 
+# Sensor anomaly endpoint
+# The current model expects five machine-failure features.
+# It cannot correctly process this endpoint's three sensor inputs.
 @app.post("/predict-anomaly")
 def predict_anomaly(sensor_data: SensorDataRequest):
-    """Handles ML model predictions safely without crashing if model is missing."""
-    if ml_model is None:
-        return {
-            "status": "UNKNOWN",
-            "risk_score": 0.0,
-            "note": "Model not loaded, using safe baseline.",
-        }
+    logger.warning(
+        "Anomaly prediction skipped: the loaded model expects "
+        "five features, while this endpoint receives three."
+    )
 
-    try:
-        features = [
-            [
-                sensor_data.temperature,
-                sensor_data.vibration,
-                sensor_data.pressure,
-            ]
-        ]
-        prediction = ml_model.predict(features)[0]
-        return {
-            "status": "ANOMALY" if prediction == 1 else "NORMAL",
-            "prediction": int(prediction),
-        }
-    except Exception as e:
-        logger.error(f"Error during model prediction: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing sensor prediction.",
-        )
+    return {
+        "status": "UNKNOWN",
+        "risk_score": None,
+        "note": (
+            "No anomaly prediction was made. A compatible model "
+            "trained on temperature, vibration, and pressure is required."
+        ),
+    }
 
 
+# Integrated workflow
 @app.post("/workflow")
 async def run_full_workflow(request: FullWorkflowRequest):
-    """Full integrated workflow from dashboard inputs to final guidance."""
+    """Combine authorization, sensor status, and guidance."""
+
     try:
         # A. Authorization check
         obj_type = request.object_type.strip().lower()
+
         if request.authorized:
             obj_status = "NORMAL"
         elif obj_type in ["wildlife", "unknown_person"]:
@@ -131,82 +175,81 @@ async def run_full_workflow(request: FullWorkflowRequest):
         else:
             obj_status = "WARNING"
 
-        # B. Sensor Anomaly ML Model Check
-        sensor_status = "NORMAL"
-        if ml_model is not None:
-            features = [
-                [
-                    request.sensor_data.temperature,
-                    request.sensor_data.vibration,
-                    request.sensor_data.pressure,
-                ]
-            ]
-            pred = ml_model.predict(features)[0]
-            if pred == 1:
-                sensor_status = "ANOMALY_DETECTED"
+        # B. Sensor anomaly check
+        # Do not pass three features into the five-feature model.
+        sensor_status = "UNKNOWN"
 
-        # C. AMD / LLM API Integration with Graceful Fallback
-        llm_guidance = "Standard monitoring recommended."
+        # C. Guidance integration with graceful fallback
+        llm_guidance = (
+            "Sensor analysis unavailable. Follow standard "
+            "operating procedures and inspect the sensor readings."
+        )
+
         if AMD_API_KEY:
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     response = await client.post(
                         f"{LLM_API_ENDPOINT}/chat",
-                        headers={"Authorization": f"Bearer {AMD_API_KEY}"},
+                        headers={
+                            "Authorization": f"Bearer {AMD_API_KEY}"
+                        },
                         json={
-                            "prompt": f"Status: {obj_status}, Sensor: {sensor_status}. Suggest response."
+                            "prompt": (
+                                f"Object status: {obj_status}. "
+                                f"Sensor status: {sensor_status}. "
+                                "Give cautious operational guidance. "
+                                "Do not claim sensor analysis was completed."
+                            )
                         },
                     )
+
                     if response.status_code == 200:
                         llm_guidance = response.json().get(
                             "guidance", llm_guidance
                         )
-            except Exception as api_err:
-                logger.warning(
-                    f"AMD Cloud API offline or timed out: {str(api_err)}"
+
+            except Exception:
+                logger.exception(
+                    "AMD Cloud API unavailable or timed out"
                 )
                 llm_guidance = (
-                    "RAG service offline. Follow standard operating protocol."
+                    "Guidance service unavailable. Follow standard "
+                    "operating procedures and inspect the equipment."
                 )
+
+        # Do not report STABLE while sensor analysis is unavailable.
+        if obj_status == "ISOLATE":
+            overall_status = "CRITICAL"
+        elif sensor_status == "UNKNOWN":
+            overall_status = "REVIEW"
+        else:
+            overall_status = "STABLE"
 
         return {
             "object_status": obj_status,
             "sensor_status": sensor_status,
             "guidance": llm_guidance,
-            "system_overall": (
-                "CRITICAL"
-                if "ISOLATE" in [obj_status, sensor_status]
-                else "STABLE"
-            ),
+            "system_overall": overall_status,
         }
 
-    except Exception as e:
-        logger.error(f"Workflow execution error: {str(e)}")
+    except Exception:
+        logger.exception("Workflow execution failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during workflow execution.",
         )
-        # Machine-health analysis endpoint
-# Initial rule-based baseline; not a trained ML prediction.
-
-class AnalyzeRequest(BaseModel):
-    machine_id: str = Field(..., min_length=1)
-    name: str = Field(..., min_length=1)
-    temperature: float
-    rpm: float
-    torque: float
-    wear: float
 
 
+# Rule-based machine-health analysis
 @app.post("/analyze")
 def analyze_machine(request: AnalyzeRequest):
-    """Analyze machine health using an initial rule-based baseline."""
+    """Analyze machine health using baseline thresholds."""
 
     alerts = []
 
-    # Critical conditions
     if request.temperature >= 90:
         alerts.append("Critical temperature")
+
     if request.wear >= 220:
         alerts.append("Critical wear level")
 
@@ -218,13 +261,13 @@ def analyze_machine(request: AnalyzeRequest):
             + "."
         )
 
-    # Warning conditions
     elif request.temperature >= 75 or request.wear >= 170:
         machine_status = "Warning"
         reasons = []
 
         if request.temperature >= 75:
             reasons.append("elevated temperature")
+
         if request.wear >= 170:
             reasons.append("high wear level")
 
@@ -255,38 +298,33 @@ def analyze_machine(request: AnalyzeRequest):
         "analysis_method": "rule_based_baseline",
     }
 
-# AI-powered machine failure prediction using the trained ML model
 
-class MachineFailureRequest(BaseModel):
-    machine_id: str = Field(default='UNKNOWN', description='Machine identifier')
-    machine_name: str = Field(default='Unknown machine', description='Machine name')
-    air_temperature: float = Field(..., description="Air temperature in Kelvin")
-    process_temperature: float = Field(..., description="Process temperature in Kelvin")
-    rotational_speed: float = Field(..., description="Rotational speed in rpm")
-    torque: float = Field(..., description="Torque in Nm")
-    tool_wear: float = Field(..., description="Tool wear in minutes")
-
-
-class AlertStatusRequest(BaseModel):
-    status: Literal['Open', 'Acknowledged', 'Resolved']
-
-
-@app.get('/api/alerts')
+# Saved alerts
+@app.get("/api/alerts")
 def get_saved_alerts():
     return list_alerts()
 
 
-@app.patch('/api/alerts/{alert_id}')
-def change_saved_alert_status(alert_id: str, request: AlertStatusRequest):
+@app.patch("/api/alerts/{alert_id}")
+def change_saved_alert_status(
+    alert_id: str, request: AlertStatusRequest
+):
     alert = update_alert(alert_id, request.status)
+
     if alert is None:
-        raise HTTPException(status_code=404, detail='Alert not found.')
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Alert not found.",
+        )
+
     return alert
 
 
+# ML-based machine failure prediction
+# This endpoint uses the five named features expected by the model.
 @app.post("/predict-machine-failure")
 def predict_machine_failure(request: MachineFailureRequest):
-    """Predict machine failure using the trained five-feature ML pipeline."""
+    """Predict machine failure using the trained five-feature pipeline."""
 
     if ml_model is None:
         raise HTTPException(
@@ -297,17 +335,20 @@ def predict_machine_failure(request: MachineFailureRequest):
     try:
         import pandas as pd
 
-        input_data = pd.DataFrame([{
-            "Air temperature [K]": request.air_temperature,
-            "Process temperature [K]": request.process_temperature,
-            "Rotational speed [rpm]": request.rotational_speed,
-            "Torque [Nm]": request.torque,
-            "Tool wear [min]": request.tool_wear,
-        }])
+        input_data = pd.DataFrame(
+            [
+                {
+                    "Air temperature [K]": request.air_temperature,
+                    "Process temperature [K]": request.process_temperature,
+                    "Rotational speed [rpm]": request.rotational_speed,
+                    "Torque [Nm]": request.torque,
+                    "Tool wear [min]": request.tool_wear,
+                }
+            ]
+        )
 
         prediction = int(ml_model.predict(input_data)[0])
         probabilities = ml_model.predict_proba(input_data)[0]
-
         failure_probability = round(float(probabilities[1]), 4)
 
         record_prediction(
